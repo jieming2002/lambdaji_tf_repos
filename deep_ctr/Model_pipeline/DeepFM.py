@@ -9,9 +9,9 @@
 方便迁移到其他算法上，只要修改input_fn and model_fn
 by lambdaji
 """
-#from __future__ import absolute_import
-#from __future__ import division
-#from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 #import argparse
 import shutil
@@ -40,8 +40,10 @@ tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
 tf.app.flags.DEFINE_integer("num_threads", 16, "Number of threads")
 tf.app.flags.DEFINE_integer("feature_size", 0, "Number of features")
 tf.app.flags.DEFINE_integer("field_size", 0, "Number of fields")
+tf.app.flags.DEFINE_integer("label_index", 0, "the index of labels, then is the feature data")
 tf.app.flags.DEFINE_integer("embedding_size", 32, "Embedding size")
 tf.app.flags.DEFINE_integer("num_epochs", 10, "Number of epochs")
+tf.app.flags.DEFINE_integer("max_steps", None, "max steps of training")
 tf.app.flags.DEFINE_integer("batch_size", 64, "Number of batch size")
 tf.app.flags.DEFINE_integer("log_steps", 1000, "save summary every steps")
 tf.app.flags.DEFINE_float("learning_rate", 0.0005, "learning rate")
@@ -59,16 +61,17 @@ tf.app.flags.DEFINE_string("servable_model_dir", '', "export servable model for 
 tf.app.flags.DEFINE_string("task_type", 'train', "task type {train, infer, eval, export}")
 tf.app.flags.DEFINE_boolean("clear_existing_model", False, "clear existing model or not")
 
+
 #1 1:0.5 2:0.03519 3:1 4:0.02567 7:0.03708 8:0.01705 9:0.06296 10:0.18185 11:0.02497 12:1 14:0.02565 15:0.03267 17:0.0247 18:0.03158 20:1 22:1 23:0.13169 24:0.02933 27:0.18159 31:0.0177 34:0.02888 38:1 51:1 63:1 132:1 164:1 236:1
-def input_fn(filenames, batch_size=32, num_epochs=1, perform_shuffle=False):
+def input_fn(filenames, batch_size=32, num_epochs=1, perform_shuffle=False, label_index=0):
     print('Parsing', filenames)
     def decode_libsvm(line):
         #columns = tf.decode_csv(value, record_defaults=CSV_COLUMN_DEFAULTS)
         #features = dict(zip(CSV_COLUMNS, columns))
         #labels = features.pop(LABEL_COLUMN)
         columns = tf.string_split([line], ' ')
-        labels = tf.string_to_number(columns.values[0], out_type=tf.float32)
-        splits = tf.string_split(columns.values[1:], ':')
+        labels = tf.string_to_number(columns.values[label_index], out_type=tf.float32)
+        splits = tf.string_split(columns.values[label_index+1:], ':')
         id_vals = tf.reshape(splits.values,splits.dense_shape)
         feat_ids, feat_vals = tf.split(id_vals,num_or_size_splits=2,axis=1)
         feat_ids = tf.string_to_number(feat_ids, out_type=tf.int32)
@@ -107,8 +110,8 @@ def model_fn(features, labels, mode, params):
     learning_rate = params["learning_rate"]
     #batch_norm_decay = params["batch_norm_decay"]
     #optimizer = params["optimizer"]
-    layers = map(int, params["deep_layers"].split(','))
-    dropout = map(float, params["dropout"].split(','))
+    layers = list(map(int, params["deep_layers"].split(','))) 
+    dropout = list(map(float, params["dropout"].split(','))) 
 
     #------bulid weights------
     FM_B = tf.get_variable(name='fm_bias', shape=[1], initializer=tf.constant_initializer(0.0))
@@ -315,13 +318,13 @@ def main(_):
     DeepFM = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params=model_params, config=config)
 
     if FLAGS.task_type == 'train':
-        train_spec = tf.estimator.TrainSpec(input_fn=lambda: input_fn(tr_files, num_epochs=FLAGS.num_epochs, batch_size=FLAGS.batch_size))
-        eval_spec = tf.estimator.EvalSpec(input_fn=lambda: input_fn(va_files, num_epochs=1, batch_size=FLAGS.batch_size), steps=None, start_delay_secs=1000, throttle_secs=1200)
+        train_spec = tf.estimator.TrainSpec(input_fn=lambda: input_fn(tr_files, num_epochs=FLAGS.num_epochs, batch_size=FLAGS.batch_size, label_index=FLAGS.label_index), max_steps=FLAGS.max_steps)
+        eval_spec = tf.estimator.EvalSpec(input_fn=lambda: input_fn(va_files, num_epochs=1, batch_size=FLAGS.batch_size, label_index=FLAGS.label_index), steps=None, start_delay_secs=1000, throttle_secs=1200)
         tf.estimator.train_and_evaluate(DeepFM, train_spec, eval_spec)
     elif FLAGS.task_type == 'eval':
-        DeepFM.evaluate(input_fn=lambda: input_fn(va_files, num_epochs=1, batch_size=FLAGS.batch_size))
+        DeepFM.evaluate(input_fn=lambda: input_fn(va_files, num_epochs=1, batch_size=FLAGS.batch_size, label_index=FLAGS.label_index))
     elif FLAGS.task_type == 'infer':
-        preds = DeepFM.predict(input_fn=lambda: input_fn(te_files, num_epochs=1, batch_size=FLAGS.batch_size), predict_keys="prob")
+        preds = DeepFM.predict(input_fn=lambda: input_fn(te_files, num_epochs=1, batch_size=FLAGS.batch_size, label_index=FLAGS.label_index), predict_keys="prob")
         with open(FLAGS.data_dir+"/pred.txt", "w") as fo:
             for prob in preds:
                 fo.write("%f\n" % (prob['prob']))
@@ -353,6 +356,7 @@ if __name__ == "__main__":
     print('num_epochs ', FLAGS.num_epochs)
     print('feature_size ', FLAGS.feature_size)
     print('field_size ', FLAGS.field_size)
+    print('label_index ', FLAGS.label_index)
     print('embedding_size ', FLAGS.embedding_size)
     print('batch_size ', FLAGS.batch_size)
     print('deep_layers ', FLAGS.deep_layers)

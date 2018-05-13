@@ -1,7 +1,7 @@
 #coding=utf8
 """
 This code referenced from [here](https://github.com/PaddlePaddle/models/blob/develop/deep_fm/preprocess.py)
--For numerical features,normalzied to continous values.
+-For numerical features, normalzied to continous values.
 -For categorical features, removed long-tailed data appearing less than 200 times.
 
 TODO：
@@ -10,19 +10,15 @@ TODO：
 """
 import os
 import sys
+import gzip
 #import click
 import random
 import collections
 import argparse
 from multiprocessing import Pool as ThreadPool
 
-# There are 13 integer features and 26 categorical features
-continous_features = range(1, 14) # 0 is target, [1, 14)
-categorial_features = range(14, 40)
-
-# Clip integer features. The clip point for each integer feature
-# is derived from the 95% quantile of the total values in each feature
-continous_clip = [20, 600, 100, 50, 64000, 500, 100, 50, 500, 10, 10, 10, 50]
+# 0 is id, 1 is target, [2, 23] is categorical features
+categorial_features = range(2, 24) 
 
 
 class CategoryDictGenerator:
@@ -37,12 +33,19 @@ class CategoryDictGenerator:
             self.dicts.append(collections.defaultdict(int))
 
     def build(self, datafile, categorial_features, cutoff=0):
-        with open(datafile, 'r') as f:
+        print('CategoryDictGenerator.build')
+        with gzip.open(datafile) as f:
+            header = f.readline()
+            print('header =', header)
+            # line_count = 0
             for line in f:
-                features = line.rstrip('\n').split('\t')
+                # line_count = line_count + 1
+                features = line.strip().decode().split(",")
                 for i in range(0, self.num_feature):
                     if features[categorial_features[i]] != '':
                         self.dicts[i][features[categorial_features[i]]] += 1
+                # if line_count > 2000:
+                    # break
         for i in range(0, self.num_feature):
             self.dicts[i] = filter(lambda x: x[1] >= cutoff, self.dicts[i].items())
             self.dicts[i] = sorted(self.dicts[i], key=lambda x: (-x[1], x[0]))
@@ -58,37 +61,7 @@ class CategoryDictGenerator:
         return res
 
     def dicts_sizes(self):
-        return map(len, self.dicts)
-
-
-class ContinuousFeatureGenerator:
-    """
-    Normalize the integer features to [0, 1] by min-max normalization
-    """
-
-    def __init__(self, num_feature):
-        self.num_feature = num_feature
-        self.min = [sys.maxsize] * num_feature
-        self.max = [-sys.maxsize] * num_feature
-
-    def build(self, datafile, continous_features):
-        with open(datafile, 'r') as f:
-            for line in f:
-                features = line.rstrip('\n').split('\t')
-                for i in range(0, self.num_feature):
-                    val = features[continous_features[i]]
-                    if val != '':
-                        val = int(val)
-                        if val > continous_clip[i]:
-                            val = continous_clip[i]
-                        self.min[i] = min(self.min[i], val)
-                        self.max[i] = max(self.max[i], val)
-
-    def gen(self, idx, val):
-        if val == '':
-            return 0.0
-        val = float(val)
-        return (val - self.min[idx]) / (self.max[idx] - self.min[idx])
+        return list(map(len, self.dicts))
 
 
 #@click.command("preprocess")
@@ -96,74 +69,71 @@ class ContinuousFeatureGenerator:
 #@click.option("--outdir", type=str, help="Path to save the processed data")
 def preprocess(datadir, outdir):
     """
-    All the 13 integer features are normalzied to continous values and these
-    continous features are combined into one vecotr with dimension 13.
-    Each of the 26 categorical features are one-hot encoded and all the one-hot
+    Each of the categorical features are one-hot encoded and all the one-hot
     vectors are combined into one sparse binary vector.
     """
-    #pool = ThreadPool(FLAGS.threads) # Sets the pool size
-    dists = ContinuousFeatureGenerator(len(continous_features))
-    dists.build(FLAGS.input_dir + 'train.txt', continous_features)
-    #pool.apply(dists.build, args=(FLAGS.input_dir + 'train.txt', continous_features,))
-
     dicts = CategoryDictGenerator(len(categorial_features))
-    dicts.build(FLAGS.input_dir + 'train.txt', categorial_features, cutoff=FLAGS.cutoff)
-    #pool.apply(dicts.build, args=(FLAGS.input_dir + 'train.txt', categorial_features,))
-
-    #pool.close()
-    #pool.join()
-
+    dicts.build(FLAGS.input_dir + 'train.gz', categorial_features, cutoff=FLAGS.cutoff)
+    
     output = open(FLAGS.output_dir + 'feature_map','w')
-    for i in continous_features:
-        output.write("{0} {1}\n".format('I'+str(i), i))
+    
     dict_sizes = dicts.dicts_sizes()
-    categorial_feature_offset = [dists.num_feature]
+    categorial_feature_offset = [0]
     for i in range(1, len(categorial_features)+1):
+        # print('dict_sizes[i - 1]=', dict_sizes[i - 1])
         offset = categorial_feature_offset[i - 1] + dict_sizes[i - 1]
         categorial_feature_offset.append(offset)
-        for key, val in dicts.dicts[i-1].iteritems():
+        for key, val in dicts.dicts[i-1].items():
             output.write("{0} {1}\n".format('C'+str(i)+'|'+key, categorial_feature_offset[i - 1]+val+1))
 
     random.seed(0)
 
-    # 90% of the data are used for training, and 10% of the data are used
-    # for validation.
+    print('preprocess.train')
+    # 90% of the data are used for training, and 10% of the data are used for validation.
     with open(FLAGS.output_dir + 'tr.libsvm', 'w') as out_train:
         with open(FLAGS.output_dir + 'va.libsvm', 'w') as out_valid:
-            with open(FLAGS.input_dir + 'train.txt', 'r') as f:
+            with gzip.open(FLAGS.input_dir + 'train.gz') as f:
+                header = f.readline()
+                print('header =', header)
                 for line in f:
-                    features = line.rstrip('\n').split('\t')
-
+                    features = line.strip().decode().split(",")
                     feat_vals = []
-                    for i in range(0, len(continous_features)):
-                        val = dists.gen(i, features[continous_features[i]])
-                        feat_vals.append(str(continous_features[i]) + ':' + "{0:.6f}".format(val).rstrip('0').rstrip('.'))
-
+                    
                     for i in range(0, len(categorial_features)):
                         val = dicts.gen(i, features[categorial_features[i]]) + categorial_feature_offset[i]
+                        # print('val =', val)
                         feat_vals.append(str(val) + ':1')
 
-                    label = features[0]
+                    id = features[0]
+                    label = features[1]
+                    out_line = "{0} {1} {2}\n".format(id, label, ' '.join(feat_vals))
+                    # print('out_line =', out_line)
                     if random.randint(0, 9999) % 10 != 0:
-                        out_train.write("{0} {1}\n".format(label, ' '.join(feat_vals)))
+                        out_train.write(out_line)
                     else:
-                        out_valid.write("{0} {1}\n".format(label, ' '.join(feat_vals)))
+                        out_valid.write(out_line)
+                    # break
 
+    print('preprocess.test')
     with open(FLAGS.output_dir + 'te.libsvm', 'w') as out:
-        with open(FLAGS.input_dir + 'test.txt', 'r') as f:
+        with gzip.open(FLAGS.input_dir + 'test.gz') as f:
+            header = f.readline()
+            print('header =', header)
             for line in f:
-                features = line.rstrip('\n').split('\t')
-
+                features = line.strip().decode().split(",")
                 feat_vals = []
-                for i in range(0, len(continous_features)):
-                    val = dists.gen(i, features[continous_features[i] - 1])
-                    feat_vals.append(str(continous_features[i]) + ':' + "{0:.6f}".format(val).rstrip('0').rstrip('.'))
 
                 for i in range(0, len(categorial_features)):
+                    # in test, 0 is id, [1, 22] is categorical features
                     val = dicts.gen(i, features[categorial_features[i] - 1]) + categorial_feature_offset[i]
+                    # print('val =', val)
                     feat_vals.append(str(val) + ':1')
-
-                out.write("{0} {1}\n".format(label, ' '.join(feat_vals)))
+                
+                id = features[0]
+                out_line = "{0} {1} {2}\n".format(id, label, ' '.join(feat_vals))
+                # print('out_line =', out_line)
+                out.write(out_line)
+                # break
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ DNN做ctr预估的优势在于对大规模离散特征建模，paper关注点大
 为了模型设计上的简单统一，采用第3种方式，感兴趣的同学可以试试前两种的效果。
 
     python get_criteo_feature.py --input_dir=../../data/criteo/ --output_dir=../../data/criteo/ --cutoff=200
+    
+    python get_avazu_feature.py --input_dir=../../data/avazu/ --output_dir=../../data/avazu/ --cutoff=200
 
 ### 训练框架 -- samples in，model out
 用Tensorflow (version: 1.4)作为训练框架，目前实现了DeepFM/wide_n_deep/FNN/PNN/NFM/AFM等算法，除了wide_n_deep，其他算法默认参数.
@@ -39,13 +41,23 @@ DNN做ctr预估的优势在于对大规模离散特征建模，paper关注点大
 
 以DeepFM为例来看看如何使用：
 
+source activate tensorflow
+
 ``train``:
 
     python DeepFM.py --task_type=train --learning_rate=0.0005 --optimizer=Adam --num_epochs=1 --batch_size=256 --field_size=39 --feature_size=117581 --deep_layers=400,400,400 --dropout=0.5,0.5,0.5 --log_steps=1000 --num_threads=8 --model_dir=./model_ckpt/criteo/DeepFM/ --data_dir=../../data/criteo/
 
+    python DeepFM.py --task_type=train --learning_rate=0.001 --optimizer=Adam --num_epochs=1 --max_steps=100000 --batch_size=256 --field_size=22 --feature_size=4923 --label_index=1 --deep_layers=400,400,400 --dropout=0.5,0.5,0.5 --log_steps=1000 --num_threads=8 --model_dir=../../model_ckpt/avazu/DeepFM/ --data_dir=../../data/avazu/
+
+``eval``:
+
+    python DeepFM.py --task_type=eval --learning_rate=0.001 --optimizer=Adam --num_epochs=1 --batch_size=256 --field_size=22 --feature_size=4923 --label_index=1 --deep_layers=400,400,400 --dropout=0.5,0.5,0.5 --log_steps=100 --num_threads=8 --model_dir=../../model_ckpt/avazu/DeepFM/ --data_dir=../../data/avazu/
+
 ``infer``:
 
     python DeepFM.py --task_type=infer --learning_rate=0.0005 --optimizer=Adam --num_epochs=1 --batch_size=256 --field_size=39 --feature_size=117581 --deep_layers=400,400,400 --dropout=0.5,0.5,0.5 --log_steps=1000 --num_threads=8 --model_dir=./model_ckpt/criteo/DeepFM/ --data_dir=../../data/criteo/
+
+    python DeepFM.py --task_type=infer --learning_rate=0.001 --optimizer=Adam --num_epochs=1 --batch_size=256 --field_size=22 --feature_size=4923 --label_index=1 --deep_layers=400,400,400 --dropout=0.5,0.5,0.5 --log_steps=100 --num_threads=8 --model_dir=../../model_ckpt/avazu/DeepFM/ --data_dir=../../data/avazu/
 
 ### 服务框架 -- request in，pctr out
 线上预测服务使用TensorFlow Serving+TAF搭建。TensorFlow Serving是一个用于机器学习模型 serving 的高性能开源库，使用 gRPC 作为接口接受外部调用，它支持模型热更新与自动模型版本管理。
