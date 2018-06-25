@@ -94,34 +94,55 @@ def preprocess(datadir, outdir):
 
     print('preprocess.train')
     # 90% of the data are used for training, and 10% of the data are used for validation.
-    with open(FLAGS.output_dir + 'tr.libsvm', 'w') as out_train:
-        with open(FLAGS.output_dir + 'va.libsvm', 'w') as out_valid:
-            with gzip.open(FLAGS.input_dir + 'train.gz') as f:
-                header = f.readline()
-                print('header =', header)
-                for line in f:
-                    features = line.strip().decode().split(",")
-                    feat_vals = []
-                    
-                    for i in range(0, len(categorial_features)):
-                        val = dicts.gen(i, features[categorial_features[i]]) + categorial_feature_offset[i]
-                        # print('val =', val)
-                        feat_vals.append(str(val) + ':1')
+    with open(FLAGS.output_dir + 'tr0.libsvm', 'w') as out_train0:
+        with open(FLAGS.output_dir + 'tr1.libsvm', 'w') as out_train1:
+            with open(FLAGS.output_dir + 'tr2.libsvm', 'w') as out_train2:
+                with open(FLAGS.output_dir + 'tr3.libsvm', 'w') as out_train3:
+                    with open(FLAGS.output_dir + 'tr4.libsvm', 'w') as out_train4:
+                        with gzip.open(FLAGS.input_dir + 'train.gz') as f:
+                            header = f.readline()
+                            print('header =', header)
+                            for line in f:
+                                features = line.strip().decode().split(",")
+                                # print('\n features =', features)
+                                feat_vals = []
+                                
+                                for i in range(0, len(categorial_features)):
+                                    val = dicts.gen(i, features[categorial_features[i]]) + categorial_feature_offset[i]
+                                    # print('val =', val)
+                                    feat_vals.append(str(val) + ':1')
 
-                    id = features[0]
-                    sys.stdout.write('\r>> id = %s' % (id))
-                    sys.stdout.flush()
-                    label = features[1]
-                    out_line = "{0} {1} {2}\n".format(id, label, ' '.join(feat_vals))
-                    # print('out_line =', out_line)
-                    if random.randint(0, 9999) % 10 != 0:
-                        out_train.write(out_line)
-                    else:
-                        out_valid.write(out_line)
-                    # break
+                                id = features[0]
+                                sys.stdout.write('\r>> id = %s' % (id))
+                                sys.stdout.flush()
+                                label = features[1]
+                                out_line = "{0} {1} {2}\n".format(id, label, ' '.join(feat_vals))
+                                # print('\n out_line =', out_line)
+                                # print('\n label =', label)
+                                if int(label) > 0:
+                                    # print('label = = 11')
+                                    out_train0.write(out_line)
+                                    out_train1.write(out_line)
+                                    out_train2.write(out_line)
+                                    out_train3.write(out_line)
+                                    out_train4.write(out_line)
+                                else:
+                                    # print('label = = 00')
+                                    partId = random.randint(0, 9999) % 5
+                                    if partId == 0:
+                                        out_train0.write(out_line)
+                                    elif partId == 1:
+                                        out_train1.write(out_line)
+                                    elif partId == 2:
+                                        out_train2.write(out_line)
+                                    elif partId == 3:
+                                        out_train3.write(out_line)
+                                    elif partId == 4:
+                                        out_train4.write(out_line)
+                                        
     sys.stdout.write('\n')
     sys.stdout.flush()
-    
+
     print('preprocess.test')
     with open(FLAGS.output_dir + 'te.libsvm', 'w') as out:
         with gzip.open(FLAGS.input_dir + 'test.gz') as f:

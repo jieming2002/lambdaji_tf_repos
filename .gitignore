@@ -5,5 +5,7 @@ __pycache__/
 
 data/
 model_ckpt/
+gbdt-lr-fm/
+servable_model/
 
 
